@@ -1,0 +1,246 @@
+html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather Forecasting</title>
+  <style>
+    :root {
+      --bg: #0e1726;
+      --panel: rgba(16, 29, 56, 0.92);
+      --text: #eaf1fb;
+      --accent: #4ca6ff;
+      --muted: #a0b0cc;
+      --error: #ff726f;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #1e314f 0%, #091220 40%, #040814 100%);
+      color: var(--text);
+      cursor: pointer;
+      transition: transform 0.2s ease, filter 0.2s ease;
+    }
+
+    .controls button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.05);
+    }
+
+    .status {
+      padding: 18px 32px;
+      color: var(--muted);
+    }
+
+    .forecast-grid {
+      display: grid;
+      gap: 22px;
+      padding: 0 32px 32px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 22px;
+      padding: 24px;
+      min-height: 172px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .card h2,
+    .card p {
+      margin: 0;
+    }
+
+    .card h2 {
+      font-size: 1.15rem;
+      margin-bottom: 12px;
+    }
+
+    .card span {
+      display: block;
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    .weather-details {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .weather-details div {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.95rem;
+    }
+
+    .error {
+      color: var(--error);
+    }
+
+    @media (max-width: 640px) {
+      .controls {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Weather Forecasting</h1>
+        <p>Enter a city name and get a 3-day weather forecast using Open-Meteo's free API.</p>
+      </div>
+      <div class="controls">
+        <input id="cityInput" type="text" placeholder="Enter city name, e.g. London" />
+        <button id="fetchBtn">Get Forecast</button>
+      </div>
+    </header>
+
+    <div class="status" id="status">Enter a city and click Get Forecast.</div>
+
+    <div class="forecast-grid" id="forecastGrid"></div>
+  </div>
+
+  <script>
+    const cityInput = document.getElementById('cityInput');
+    const fetchBtn = document.getElementById('fetchBtn');
+    const statusEl = document.getElementById('status');
+    const forecastGrid = document.getElementById('forecastGrid');
+
+    fetchBtn.addEventListener('click', () => {
+      const city = cityInput.value.trim();
+      if (!city) {
+        statusEl.textContent = 'Please enter a city name.';
+        statusEl.classList.add('error');
+        return;
+      }
+      statusEl.classList.remove('error');
+      statusEl.textContent = `Looking up coordinates for ${city}...`;
+      forecastGrid.innerHTML = '';
+      fetchWeatherForCity(city);
+    });
+
+    async function fetchWeatherForCity(city) {
+      try {
+        const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
+        const geoResponse = await fetch(geocodeUrl);
+        const geoData = await geoResponse.json();
+
+        if (!geoData.results || geoData.results.length === 0) {
+          throw new Error('City not found. Try another city name.');
+        }
+
+        const place = geoData.results[0];
+        const { latitude, longitude, name, country } = place;
+        statusEl.textContent = `Fetching weather for ${name}, ${country}...`;
+
+        const start = new Date();
+        const end = new Date();
+        end.setDate(start.getDate() + 2);
+
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max&timezone=auto&start_date=${formatDate(start)}&end_date=${formatDate(end)}`;
+
+        const weatherResponse = await fetch(weatherUrl);
+        const weatherData = await weatherResponse.json();
+
+        if (!weatherData.daily) {
+          throw new Error('Weather details are unavailable for this location.');
+        }
+
+        renderForecast(weatherData, name, country);
+      } catch (error) {
+        statusEl.textContent = error.message;
+        statusEl.classList.add('error');
+      }
+    }
+
+    function renderForecast(data, city, country) {
+      const { time, weathercode, temperature_2m_max, temperature_2m_min, precipitation_sum, windspeed_10m_max } = data.daily;
+      forecastGrid.innerHTML = '';
+
+      statusEl.textContent = `3-day forecast for ${city}, ${country}`;
+
+      for (let i = 0; i < time.length; i += 1) {
+        const day = time[i];
+        const card = document.createElement('article');
+        card.className = 'card';
+
+        card.innerHTML = `
+          <div>
+            <h2>${formatDay(day)}</h2>
+            <p>${weatherCodeToLabel(weathercode[i])}</p>
+          </div>
+          <div class="weather-details">
+            <div><span>Max temp</span><strong>${temperature_2m_max[i].toFixed(1)}°C</strong></div>
+            <div><span>Min temp</span><strong>${temperature_2m_min[i].toFixed(1)}°C</strong></div>
+            <div><span>Precipitation</span><strong>${precipitation_sum[i].toFixed(1)} mm</strong></div>
+            <div><span>Wind speed</span><strong>${windspeed_10m_max[i].toFixed(1)} km/h</strong></div>
+          </div>
+          <span>Forecast date: ${day}</span>
+        `;
+
+        forecastGrid.appendChild(card);
+      }
+    }
+
+    function formatDate(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function formatDay(dateString) {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    }
+
+    function weatherCodeToLabel(code) {
+      const labels = {
+        0: 'Clear sky',
+        1: 'Mainly clear',
+        2: 'Partly cloudy',
+        3: 'Overcast',
+        45: 'Fog',
+        48: 'Depositing rime fog',
+        51: 'Light drizzle',
+        53: 'Moderate drizzle',
+        55: 'Dense drizzle',
+        56: 'Freezing drizzle',
+        57: 'Dense freezing drizzle',
+        61: 'Slight rain',
+        63: 'Moderate rain',
+        65: 'Heavy rain',
+        66: 'Freezing rain',
+        67: 'Heavy freezing rain',
+        71: 'Slight snow fall',
+        73: 'Moderate snow fall',
+        75: 'Heavy snow fall',
+        77: 'Snow grains',
+        80: 'Rain showers',
+        81: 'Moderate showers',
+        82: 'Violent showers',
+        85: 'Slight snow showers',
+        86: 'Heavy snow showers',
+        95: 'Thunderstorm',
+        96: 'Thunderstorm with hail',
+        99: 'Thunderstorm with heavy hail'
+      };
+      return labels[code] || 'Unknown';
+    }
+  </script>
+</body>
+</html>
